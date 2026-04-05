@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Pencil, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Pencil, Sparkles, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { Task, Priority, Effort, TimeOfDay, DayOfWeek, DAYS } from '@/lib/types';
 import { getTasks, saveTasks, generateSchedule, getCurrentWeek } from '@/lib/taskStore';
 import Navbar from '@/components/Navbar';
@@ -25,11 +27,13 @@ export default function AddTasks() {
   const [effort, setEffort] = useState<Effort>('moderate');
   const [preferredTime, setPreferredTime] = useState<TimeOfDay>('');
   const [dueDay, setDueDay] = useState<DayOfWeek>('Mon');
+  const [isFixed, setIsFixed] = useState(false);
+  const [fixedHour, setFixedHour] = useState('9');
 
   const resetForm = () => {
     setName(''); setPriority('medium'); setDuration('1');
     setEffort('moderate'); setPreferredTime(''); setDueDay('Mon');
-    setEditingId(null);
+    setEditingId(null); setIsFixed(false); setFixedHour('9');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -42,9 +46,11 @@ export default function AddTasks() {
       priority,
       duration: parseFloat(duration) || 1,
       effort,
-      preferredTime,
+      preferredTime: isFixed ? '' : preferredTime,
       dueDay,
       status: 'not-started',
+      isFixed,
+      fixedHour: isFixed ? parseInt(fixedHour) : undefined,
     };
 
     let updated: Task[];
@@ -61,6 +67,7 @@ export default function AddTasks() {
   const handleEdit = (task: Task) => {
     setName(task.name); setPriority(task.priority); setDuration(String(task.duration));
     setEffort(task.effort); setPreferredTime(task.preferredTime); setDueDay(task.dueDay);
+    setIsFixed(!!task.isFixed); setFixedHour(String(task.fixedHour ?? 9));
     setEditingId(task.id);
   };
 
@@ -99,6 +106,15 @@ export default function AddTasks() {
             className="bg-secondary/50 border-border/50"
             required
           />
+
+          {/* Fixed task toggle */}
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+            <Switch id="fixed-toggle" checked={isFixed} onCheckedChange={setIsFixed} />
+            <Label htmlFor="fixed-toggle" className="text-sm text-foreground cursor-pointer flex items-center gap-2">
+              <Lock className="h-3.5 w-3.5" /> Fixed Task (locked time, never rescheduled)
+            </Label>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <Select value={priority} onValueChange={v => setPriority(v as Priority)}>
               <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Priority" /></SelectTrigger>
@@ -126,14 +142,29 @@ export default function AddTasks() {
                 <SelectItem value="intense">Intense</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={preferredTime} onValueChange={v => setPreferredTime(v as TimeOfDay)}>
-              <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Time (optional)" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="morning">🌅 Morning</SelectItem>
-                <SelectItem value="afternoon">☀️ Afternoon</SelectItem>
-                <SelectItem value="evening">🌙 Evening</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {isFixed ? (
+              <Select value={fixedHour} onValueChange={setFixedHour}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Start Time" /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 15 }, (_, i) => i + 8).map(h => (
+                    <SelectItem key={h} value={String(h)}>
+                      {h === 12 ? '12PM' : h > 12 ? `${h - 12}PM` : `${h}AM`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select value={preferredTime} onValueChange={v => setPreferredTime(v as TimeOfDay)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Time (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">🌅 Morning</SelectItem>
+                  <SelectItem value="afternoon">☀️ Afternoon</SelectItem>
+                  <SelectItem value="evening">🌙 Evening</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
             <Select value={dueDay} onValueChange={v => setDueDay(v as DayOfWeek)}>
               <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Day" /></SelectTrigger>
               <SelectContent>
@@ -157,6 +188,7 @@ export default function AddTasks() {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
+                    {task.isFixed && <Lock className="h-3.5 w-3.5 text-fixed flex-shrink-0" />}
                     <span className="font-medium text-foreground truncate">{task.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${priorityColors[task.priority]}`}>
                       {task.priority}
@@ -164,7 +196,9 @@ export default function AddTasks() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {task.duration}h · {task.effort} · {task.dueDay}
-                    {task.preferredTime && ` · ${task.preferredTime}`}
+                    {task.isFixed && task.fixedHour !== undefined
+                      ? ` · Fixed @ ${task.fixedHour > 12 ? task.fixedHour - 12 : task.fixedHour}${task.fixedHour >= 12 ? 'PM' : 'AM'}`
+                      : task.preferredTime ? ` · ${task.preferredTime}` : ''}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2">
