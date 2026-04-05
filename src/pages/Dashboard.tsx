@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { getTasks, saveTasks, getCurrentWeek, setCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
 import { Task, DAYS, DayOfWeek, TaskStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -65,7 +65,11 @@ export default function Dashboard() {
   const handleReallocate = () => {
     setReallocating(true);
     setTimeout(() => {
-      const pending = tasks.map(t => t.status === 'done' ? t : { ...t, scheduledHour: undefined });
+      // Keep fixed tasks and done tasks as-is; reschedule only pending non-fixed tasks
+      const pending = tasks.map(t => {
+        if (t.isFixed || t.status === 'done') return t;
+        return { ...t, scheduledHour: undefined };
+      });
       const rescheduled = generateSchedule(pending);
       setTasksState(rescheduled);
       saveTasks(rescheduled);
@@ -113,8 +117,8 @@ export default function Dashboard() {
           <div className="glass-card p-4 mb-6 border-fixed/30 bg-fixed/5 animate-slide-up flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-fixed flex-shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-foreground">Week {week} — Smart Mode</p>
-              <p className="text-xs text-muted-foreground">CogniTask has learned your patterns. Tasks are now auto-scheduled based on your productivity behavior.</p>
+              <p className="text-sm font-semibold text-foreground">Smart Mode Active — Schedule based on your Week 1 behavior</p>
+              <p className="text-xs text-muted-foreground">Tasks are auto-scheduled to your most productive time slots. Fixed tasks remain locked.</p>
             </div>
           </div>
         )}
@@ -131,6 +135,7 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <span className={`font-medium ${task.status === 'done' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{task.name}</span>
                     <span className="text-xs text-muted-foreground ml-2">{task.duration}h</span>
+                    {task.isFixed && <span className="text-xs text-fixed ml-2">🔒</span>}
                   </div>
                   <button
                     onClick={() => toggleStatus(task.id)}
@@ -146,7 +151,6 @@ export default function Dashboard() {
 
         {/* Charts grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Energy Curve */}
           <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <h3 className="text-sm font-semibold text-foreground mb-4">Energy Curve</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -160,7 +164,6 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Cognitive Load */}
           <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '0.25s' }}>
             <h3 className="text-sm font-semibold text-foreground mb-4">Cognitive Load Meter</h3>
             <div className="flex flex-col items-center justify-center h-[200px]">
@@ -178,7 +181,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Weekly Completion */}
           <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '0.3s' }}>
             <h3 className="text-sm font-semibold text-foreground mb-4">Weekly Completion Rate</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -193,7 +195,6 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Priority Distribution */}
           <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '0.35s' }}>
             <h3 className="text-sm font-semibold text-foreground mb-4">Priority Distribution</h3>
             <ResponsiveContainer width="100%" height={200}>
