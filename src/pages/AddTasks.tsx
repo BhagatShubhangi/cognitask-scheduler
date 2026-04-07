@@ -36,10 +36,39 @@ export default function AddTasks() {
     setEditingId(null); setIsFixed(false); setFixedHour('9');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    let aiSuggestedHour: number | undefined;
+
+if (!isFixed) {
+  try {
+    const res = await fetch("http://127.0.0.1:8000/suggest-slot", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        category: effort === "intense" ? "Deep Work" : "Light Work",
+        priority:
+          priority.charAt(0).toUpperCase() + priority.slice(1),
+        duration_mins: (parseFloat(duration) || 1) * 60,
+        day: dueDay === "Mon" ? "Monday" :
+             dueDay === "Tue" ? "Tuesday" :
+             dueDay === "Wed" ? "Wednesday" :
+             dueDay === "Thu" ? "Thursday" :
+             dueDay === "Fri" ? "Friday" :
+             dueDay === "Sat" ? "Saturday" : "Sunday",
+      }),
+    });
+
+    const data = await res.json();
+    aiSuggestedHour = data.best_hour;
+  } catch (error) {
+    console.error("AI scheduling failed:", error);
+  }
+}
     const task: Task = {
       id: editingId || crypto.randomUUID(),
       name: name.trim(),
@@ -50,7 +79,9 @@ export default function AddTasks() {
       dueDay,
       status: 'not-started',
       isFixed,
-      fixedHour: isFixed ? parseInt(fixedHour) : undefined,
+      fixedHour: isFixed 
+      ? parseInt(fixedHour) 
+      : aiSuggestedHour,
     };
 
     let updated: Task[];
