@@ -1,7 +1,7 @@
 # ==============================
 # CogniTask ML Scheduler Module
 # ==============================
-# Predicts the best hour to schedule a task
+# Predicts the best time window and hour to schedule a task
 
 import pandas as pd
 import joblib
@@ -37,8 +37,18 @@ def load_data(file_path="data/cognitive_load_dataset.xlsx"):
 def train_scheduler_model(file_path="data/cognitive_load_dataset.xlsx"):
     df = load_data(file_path)
 
+    # Create a time window label for better accuracy
+    def hour_to_window(h):
+        if h < 12:
+            return "morning"
+        elif h < 17:
+            return "afternoon"
+        else:
+            return "evening"
+
+    df["Time_Window"] = df["Hour_of_Day"].apply(hour_to_window)
+
     X = df[["Category", "Priority", "Duration_mins", "Day"]]
-    y = df["Hour_of_Day"]
 
     categorical_features = ["Category", "Priority", "Day"]
     numerical_features = ["Duration_mins"]
@@ -50,34 +60,46 @@ def train_scheduler_model(file_path="data/cognitive_load_dataset.xlsx"):
         ]
     )
 
-    model = Pipeline(
+    # Train window classifier (3 classes — much higher accuracy)
+    y_window = df["Time_Window"]
+    window_model = Pipeline(
         steps=[
             ("preprocessor", preprocessor),
-            (
-                "classifier",
-                RandomForestClassifier(
-                    n_estimators=200,
-                    max_depth=10,
-                    random_state=42,
-                ),
-            ),
+            ("classifier", RandomForestClassifier(n_estimators=300, max_depth=12, random_state=42)),
         ]
     )
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y_window, test_size=0.2, random_state=42
     )
-
-    model.fit(X_train, y_train)
-
-    y_pred = model.predict(X_test)
+    window_model.fit(X_train, y_train)
+    y_pred = window_model.predict(X_test)
+    print("=== Time Window Classifier ===")
     print("Accuracy:", accuracy_score(y_test, y_pred))
     print(classification_report(y_test, y_pred))
 
-    joblib.dump(model, "ml/cognitask_scheduler_model.pkl")
-    print("✅ Model saved at ml/cognitask_scheduler_model.pkl")
+    # Train exact hour model too (for fine-grained prediction within window)
+    y_hour = df["Hour_of_Day"]
+    hour_model = Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("classifier", RandomForestClassifier(n_estimators=300, max_depth=15, random_state=42)),
+        ]
+    )
 
-    return model
+    X_train_h, X_test_h, y_train_h, y_test_h = train_test_split(
+        X, y_hour, test_size=0.2, random_state=42
+    )
+    hour_model.fit(X_train_h, y_train_h)
+    y_pred_h = hour_model.predict(X_test_h)
+    print("\n=== Exact Hour Model ===")
+    print("Accuracy:", accuracy_score(y_test_h, y_pred_h))
+
+    # Save both models
+    joblib.dump({"window": window_model, "hour": hour_model}, "ml/cognitask_scheduler_model.pkl")
+    print("\n✅ Models saved at ml/cognitask_scheduler_model.pkl")
+
+    return {"window": window_model, "hour": hour_model}
 
 
 # ==============================
@@ -90,7 +112,14 @@ def load_model(model_path="ml/cognitask_scheduler_model.pkl"):
 # ==============================
 # STEP 4: PREDICT BEST SLOT
 # ==============================
-def suggest_best_slot(model, category, priority, duration_mins, day):
+WINDOW_HOURS = {
+    "morning": list(range(8, 12)),
+    "afternoon": list(range(12, 17)),
+    "evening": list(range(17, 22)),
+}
+
+
+def suggest_best_slot(models, category, priority, duration_mins, day):
     sample = pd.DataFrame(
         {
             "Category": [category],
@@ -100,22 +129,33 @@ def suggest_best_slot(model, category, priority, duration_mins, day):
         }
     )
 
-    predicted_hour = model.predict(sample)[0]
-    return int(predicted_hour)
+    # Get window prediction
+    predicted_window = models["window"].predict(sample)[0]
+    # Get exact hour prediction
+    predicted_hour = int(models["hour"].predict(sample)[0])
+
+    # If exact hour falls in predicted window, use it; otherwise pick window midpoint
+    window_hours = WINDOW_HOURS.get(predicted_window, list(range(8, 22)))
+    if predicted_hour in window_hours:
+        return predicted_hour
+    return window_hours[len(window_hours) // 2]
 
 
 # ==============================
 # STEP 5: RUN FILE
 # ==============================
 if __name__ == "__main__":
-    model = train_scheduler_model()
+    models = train_scheduler_model()
 
-    best_hour = suggest_best_slot(
-        model,
-        category="Deep Work",
-        priority="High",
-        duration_mins=90,
-        day="Monday",
-    )
+    test_cases = [
+        ("Deep Work", "High", 90, "Monday"),
+        ("Light Work", "Low", 30, "Wednesday"),
+        ("Meetings", "Medium", 60, "Friday"),
+        ("Exercise", "Low", 45, "Saturday"),
+        ("Study", "High", 120, "Tuesday"),
+    ]
 
-    print(f"✨ Suggested slot: {best_hour}:00")
+    print("\n=== Predictions ===")
+    for cat, pri, dur, day in test_cases:
+        hour = suggest_best_slot(models, cat, pri, dur, day)
+        print(f"  {cat} ({pri}, {dur}min, {day}) → {hour}:00")

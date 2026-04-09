@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTasks, saveTasks } from '@/lib/taskStore';
-import { Task, DAYS, HOURS, Priority, Effort } from '@/lib/types';
+import { Task, DAYS, HOURS, Priority, Effort, DayOfWeek } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LayoutDashboard, X, Lock, GripVertical } from 'lucide-react';
+import { LayoutDashboard, X, Lock, GripVertical, Clock } from 'lucide-react';
+import { Label } from '@/components/ui/label';
 import Navbar from '@/components/Navbar';
 
 function getTaskColor(priority: Priority, effort: Effort): string {
@@ -21,7 +22,6 @@ function formatHour(h: number): string {
   return h > 12 ? `${h - 12}PM` : `${h}AM`;
 }
 
-// Check if a task occupies a given slot (for multi-hour tasks)
 function taskOccupiesSlot(task: Task, day: string, hour: number): boolean {
   if (task.dueDay !== day || task.scheduledHour === undefined) return false;
   const start = task.scheduledHour;
@@ -29,7 +29,6 @@ function taskOccupiesSlot(task: Task, day: string, hour: number): boolean {
   return hour >= start && hour < end;
 }
 
-// Check if a slot range is free (excluding a specific task)
 function canPlaceTask(tasks: Task[], day: string, hour: number, duration: number, excludeId: string): boolean {
   for (let i = 0; i < Math.ceil(duration); i++) {
     const slotHour = hour + i;
@@ -46,6 +45,7 @@ export default function WeeklySchedule() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [editName, setEditName] = useState('');
   const [editPriority, setEditPriority] = useState<Priority>('medium');
+  const [editHour, setEditHour] = useState<string>('');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ day: string; hour: number } | null>(null);
 
@@ -53,11 +53,35 @@ export default function WeeklySchedule() {
     setSelectedTask(task);
     setEditName(task.name);
     setEditPriority(task.priority);
+    setEditHour(String(task.scheduledHour ?? task.fixedHour ?? 9));
+  };
+
+  const saveUserAdjustment = (priority: Priority, hour: number) => {
+    const key = 'cognitask_user_adjustments';
+    const adjustments: Array<{ priority: string; hour: number }> = JSON.parse(localStorage.getItem(key) || '[]');
+    adjustments.push({ priority, hour });
+    localStorage.setItem(key, JSON.stringify(adjustments));
   };
 
   const handleSaveEdit = () => {
     if (!selectedTask) return;
-    const updated = tasks.map(t => t.id === selectedTask.id ? { ...t, name: editName, priority: editPriority } : t);
+    const newHour = parseInt(editHour);
+    const hourChanged = newHour !== selectedTask.scheduledHour && !selectedTask.isFixed;
+
+    const updated = tasks.map(t => {
+      if (t.id !== selectedTask.id) return t;
+      const updatedTask = { ...t, name: editName, priority: editPriority };
+      if (!t.isFixed && !isNaN(newHour) && canPlaceTask(tasks, t.dueDay, newHour, t.duration, t.id)) {
+        updatedTask.scheduledHour = newHour;
+        updatedTask.userAdjustedHour = newHour;
+      }
+      return updatedTask;
+    });
+
+    if (hourChanged && !isNaN(newHour)) {
+      saveUserAdjustment(editPriority, newHour);
+    }
+
     setTasksState(updated);
     saveTasks(updated);
     setSelectedTask(null);
@@ -71,18 +95,15 @@ export default function WeeklySchedule() {
     setSelectedTask(null);
   };
 
-  // Only get tasks that START at this slot (not continuation slots)
   const getTasksStartingAt = (day: string, hour: number) =>
     tasks.filter(t => t.dueDay === day && t.scheduledHour === hour);
 
-  // Check if this slot is occupied by a multi-hour task that started earlier
   const isOccupiedByContinuation = (day: string, hour: number) =>
     tasks.some(t => {
       if (t.dueDay !== day || t.scheduledHour === undefined) return false;
       return t.scheduledHour < hour && hour < t.scheduledHour + Math.ceil(t.duration);
     });
 
-  // Drag handlers
   const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (task?.isFixed) { e.preventDefault(); return; }
@@ -111,9 +132,11 @@ export default function WeeklySchedule() {
     if (!task || task.isFixed) return;
     if (!canPlaceTask(tasks, day, hour, task.duration, draggedTaskId)) return;
 
+    saveUserAdjustment(task.priority, hour);
+
     const updated = tasks.map(t =>
       t.id === draggedTaskId
-        ? { ...t, dueDay: day as Task['dueDay'], scheduledHour: hour }
+        ? { ...t, dueDay: day as DayOfWeek, scheduledHour: hour, userAdjustedHour: hour }
         : t
     );
     setTasksState(updated);
@@ -138,6 +161,10 @@ export default function WeeklySchedule() {
           </Button>
         </div>
 
+        <p className="text-xs text-muted-foreground mb-4">
+          💡 Drag non-fixed tasks to move them. Click any task to edit its time — the model learns your preferences automatically.
+        </p>
+
         {/* Legend */}
         <div className="flex flex-wrap gap-3 mb-4 text-xs">
           {[
@@ -155,26 +182,23 @@ export default function WeeklySchedule() {
 
         <div className="glass-card overflow-x-auto animate-slide-up">
           <div className="min-w-[800px]">
-            {/* Header */}
             <div className="grid grid-cols-[70px_repeat(7,1fr)] border-b border-border/50">
               <div className="p-2 text-xs text-muted-foreground" />
               {DAYS.map(d => (
                 <div key={d} className="p-2 text-center text-sm font-semibold text-foreground border-l border-border/30">{d}</div>
               ))}
             </div>
-            {/* Time slots */}
             {HOURS.map(hour => (
               <div key={hour} className="grid grid-cols-[70px_repeat(7,1fr)] border-b border-border/20 h-[48px]">
                 <div className="p-2 text-xs text-muted-foreground flex items-start justify-end pr-3">{formatHour(hour)}</div>
                 {DAYS.map(day => {
                   const slotTasks = getTasksStartingAt(day, hour);
-                  const isContinuation = isOccupiedByContinuation(day, hour);
                   const isDropHere = dropTarget?.day === day && dropTarget?.hour === hour;
 
                   return (
                     <div
                       key={day}
-                      className={`border-l border-border/20 p-0.5 relative ${isDropHere ? 'bg-primary/20' : ''} ${isContinuation ? '' : ''}`}
+                      className={`border-l border-border/20 p-0.5 relative ${isDropHere ? 'bg-primary/20' : ''}`}
                       onDragOver={e => handleDragOver(e, day, hour)}
                       onDrop={e => handleDrop(e, day, hour)}
                     >
@@ -186,9 +210,7 @@ export default function WeeklySchedule() {
                           onDragEnd={handleDragEnd}
                           onClick={() => openModal(task)}
                           className={`absolute left-0.5 right-0.5 top-0.5 z-10 p-1.5 rounded-md text-xs font-medium transition-all hover:brightness-110 cursor-pointer ${getTaskColor(task.priority, task.effort)} ${task.isFixed ? 'border-2 border-dashed border-white/40' : ''} ${!task.isFixed ? 'hover:scale-[1.02] cursor-grab active:cursor-grabbing' : ''} ${draggedTaskId === task.id ? 'opacity-40' : ''}`}
-                          style={{
-                            height: `${Math.max(task.duration, 1) * 48 - 4}px`,
-                          }}
+                          style={{ height: `${Math.max(task.duration, 1) * 48 - 4}px` }}
                         >
                           <div className="flex items-center gap-1">
                             {task.isFixed ? (
@@ -212,7 +234,7 @@ export default function WeeklySchedule() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal with time change */}
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => setSelectedTask(null)}>
           <div className="glass-card p-6 w-full max-w-sm animate-fade-in-scale" onClick={e => e.stopPropagation()}>
@@ -230,8 +252,27 @@ export default function WeeklySchedule() {
                   <SelectItem value="low">🟢 Low</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Time change — only for non-fixed tasks */}
+              {!selectedTask.isFixed && (
+                <div>
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-1.5">
+                    <Clock className="h-3 w-3" /> Change Scheduled Time
+                  </Label>
+                  <Select value={editHour} onValueChange={setEditHour}>
+                    <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {HOURS.map(h => (
+                        <SelectItem key={h} value={String(h)}>{formatHour(h)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-1">The model will learn your time preferences automatically.</p>
+                </div>
+              )}
+
               {selectedTask.isFixed && (
-                <p className="text-xs text-fixed flex items-center gap-1"><Lock className="h-3 w-3" /> This is a fixed task — it won't be rescheduled.</p>
+                <p className="text-xs text-fixed flex items-center gap-1"><Lock className="h-3 w-3" /> Fixed task — time cannot be changed.</p>
               )}
               <div className="flex gap-2">
                 <Button onClick={handleSaveEdit} className="flex-1">Save</Button>

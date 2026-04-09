@@ -16,6 +16,8 @@ export interface Task {
   scheduledHour?: number;
   isFixed?: boolean;
   fixedHour?: number;
+  isEveryday?: boolean;
+  userAdjustedHour?: number;
 }
 
 export const DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

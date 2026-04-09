@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { getTasks, saveTasks, getCurrentWeek, setCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
+import { useNavigate } from 'react-router-dom';
+import { getTasks, saveTasks, getCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
 import { Task, DAYS, DayOfWeek, TaskStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Sparkles } from 'lucide-react';
@@ -36,6 +37,7 @@ const statusStyles: Record<TaskStatus, string> = {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [tasks, setTasksState] = useState<Task[]>(getTasks());
   const [reallocating, setReallocating] = useState(false);
   const week = getCurrentWeek();
@@ -78,8 +80,7 @@ export default function Dashboard() {
   };
 
   const handleAdvanceWeek = () => {
-    setCurrentWeek(week + 1);
-    window.location.reload();
+    navigate('/predicted');
   };
 
   // Charts data

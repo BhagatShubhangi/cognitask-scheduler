@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import AddTasks from "./pages/AddTasks";
 import WeeklySchedule from "./pages/WeeklySchedule";
 import Dashboard from "./pages/Dashboard";
+import PredictedSchedule from "./pages/PredictedSchedule";
 import NotFound from "./pages/NotFound";
 import { isLoggedIn } from "./lib/taskStore";
 
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/tasks" element={<ProtectedRoute><AddTasks /></ProtectedRoute>} />
           <Route path="/schedule" element={<ProtectedRoute><WeeklySchedule /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/predicted" element={<ProtectedRoute><PredictedSchedule /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
