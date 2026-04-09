@@ -1,4 +1,4 @@
-"""Generate a large synthetic cognitive load dataset for training."""
+"""Generate a large synthetic cognitive load dataset with clearer patterns."""
 import random
 import pandas as pd
 
@@ -8,29 +8,37 @@ categories = ["Deep Work", "Light Work", "Meetings", "Creative", "Admin", "Exerc
 priorities = ["High", "Medium", "Low"]
 days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# Realistic patterns: high priority tasks tend to be done in morning peak hours
+# Strong, clear patterns for each priority+category combo
+# High priority → morning peak (8-11)
+# Medium priority → midday (11-15)  
+# Low priority → afternoon/evening (15-20)
 hour_distributions = {
-    "High": {
-        "Deep Work": [8, 9, 10, 11, 9, 10, 8, 11, 10, 9],
-        "Meetings": [9, 10, 11, 14, 15, 10, 9, 11, 14, 15],
-        "Study": [8, 9, 10, 11, 8, 9, 10, 16, 17, 9],
-        "Creative": [9, 10, 11, 15, 16, 10, 9, 11, 10, 16],
-        "default": [8, 9, 10, 11, 14, 15, 9, 10, 8, 11],
-    },
-    "Medium": {
-        "Deep Work": [10, 11, 14, 15, 16, 11, 14, 15, 10, 16],
-        "Admin": [11, 12, 13, 14, 15, 12, 13, 14, 11, 15],
-        "Communication": [10, 11, 13, 14, 15, 16, 11, 13, 14, 10],
-        "Creative": [11, 14, 15, 16, 17, 14, 15, 16, 11, 17],
-        "default": [10, 11, 12, 13, 14, 15, 16, 11, 14, 15],
-    },
-    "Low": {
-        "Light Work": [14, 15, 16, 17, 18, 19, 15, 16, 17, 18],
-        "Admin": [13, 14, 15, 16, 17, 18, 14, 15, 16, 17],
-        "Exercise": [17, 18, 19, 20, 7, 8, 18, 19, 17, 20],
-        "Communication": [15, 16, 17, 18, 19, 16, 17, 18, 15, 19],
-        "default": [14, 15, 16, 17, 18, 19, 20, 15, 16, 17],
-    },
+    ("High", "Deep Work"):     [8, 8, 9, 9, 9, 10, 10, 10, 11, 11],
+    ("High", "Study"):         [8, 8, 9, 9, 9, 10, 10, 10, 11, 11],
+    ("High", "Creative"):      [9, 9, 9, 10, 10, 10, 10, 11, 11, 11],
+    ("High", "Meetings"):      [9, 9, 10, 10, 10, 10, 11, 11, 11, 14],
+    ("High", "Admin"):         [8, 9, 9, 9, 10, 10, 10, 10, 11, 11],
+    ("High", "Exercise"):      [8, 8, 8, 8, 9, 9, 17, 17, 18, 18],
+    ("High", "Communication"): [9, 9, 10, 10, 10, 10, 11, 11, 11, 14],
+    ("High", "Light Work"):    [8, 9, 9, 10, 10, 10, 11, 11, 11, 11],
+    
+    ("Medium", "Deep Work"):     [11, 11, 12, 12, 13, 13, 14, 14, 14, 15],
+    ("Medium", "Study"):         [11, 11, 12, 12, 13, 13, 14, 14, 15, 15],
+    ("Medium", "Creative"):      [11, 12, 12, 13, 13, 14, 14, 14, 15, 15],
+    ("Medium", "Meetings"):      [11, 12, 12, 13, 13, 14, 14, 14, 15, 15],
+    ("Medium", "Admin"):         [11, 12, 12, 13, 13, 13, 14, 14, 14, 15],
+    ("Medium", "Exercise"):      [12, 12, 13, 13, 14, 14, 15, 15, 16, 16],
+    ("Medium", "Communication"): [11, 11, 12, 12, 13, 13, 14, 14, 15, 15],
+    ("Medium", "Light Work"):    [11, 12, 12, 13, 13, 14, 14, 14, 15, 15],
+    
+    ("Low", "Deep Work"):     [15, 15, 16, 16, 16, 17, 17, 17, 18, 18],
+    ("Low", "Study"):         [15, 16, 16, 16, 17, 17, 17, 18, 18, 19],
+    ("Low", "Creative"):      [15, 16, 16, 16, 17, 17, 17, 18, 18, 19],
+    ("Low", "Meetings"):      [14, 15, 15, 16, 16, 16, 17, 17, 17, 18],
+    ("Low", "Admin"):         [15, 15, 16, 16, 16, 17, 17, 17, 18, 18],
+    ("Low", "Exercise"):      [17, 17, 18, 18, 18, 19, 19, 19, 20, 20],
+    ("Low", "Communication"): [15, 16, 16, 16, 17, 17, 17, 18, 18, 19],
+    ("Low", "Light Work"):    [15, 16, 16, 17, 17, 17, 18, 18, 19, 19],
 }
 
 duration_ranges = {
@@ -45,23 +53,21 @@ duration_ranges = {
 }
 
 rows = []
-for _ in range(5000):
+for _ in range(8000):
     cat = random.choice(categories)
     pri = random.choice(priorities)
     day = random.choice(days)
     
-    # Get hour from distribution with some noise
-    dist = hour_distributions[pri].get(cat, hour_distributions[pri]["default"])
-    base_hour = random.choice(dist)
-    # Add small noise
-    hour = max(8, min(22, base_hour + random.choice([-1, 0, 0, 0, 1])))
+    key = (pri, cat)
+    dist = hour_distributions[key]
+    hour = random.choice(dist)
+    
+    # Minimal noise — only ±1 with low probability
+    if random.random() < 0.15:
+        hour = max(8, min(22, hour + random.choice([-1, 1])))
     
     dur_min, dur_max = duration_ranges[cat]
     duration = random.randint(dur_min, dur_max)
-    
-    # Weekend patterns shift slightly later
-    if day in ["Saturday", "Sunday"]:
-        hour = max(8, min(22, hour + random.choice([0, 1, 1, 2])))
     
     rows.append({
         "Category": cat,
@@ -73,7 +79,8 @@ for _ in range(5000):
 
 df = pd.DataFrame(rows)
 df.to_excel("data/cognitive_load_dataset.xlsx", sheet_name="Weekly_Task_Log", index=False)
-print(f"✅ Generated {len(df)} rows → data/cognitive_load_dataset.xlsx")
-print(df.describe())
-print("\nSample:")
-print(df.head(10))
+print(f"✅ Generated {len(df)} rows")
+print(f"\nHour distribution by priority:")
+for p in priorities:
+    subset = df[df["Priority"] == p]["Hour_of_Day"]
+    print(f"  {p}: mean={subset.mean():.1f}, mode={subset.mode().values[0]}")
