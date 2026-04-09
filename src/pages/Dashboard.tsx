@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { getTasks, saveTasks, getCurrentWeek, setCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
+import { useNavigate } from 'react-router-dom';
+import { getTasks, saveTasks, getCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
 import { Task, DAYS, DayOfWeek, TaskStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Sparkles } from 'lucide-react';
