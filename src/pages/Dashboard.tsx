@@ -37,6 +37,7 @@ const statusStyles: Record<TaskStatus, string> = {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [tasks, setTasksState] = useState<Task[]>(getTasks());
   const [reallocating, setReallocating] = useState(false);
   const week = getCurrentWeek();
