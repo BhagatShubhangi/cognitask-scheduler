@@ -78,8 +78,7 @@ export default function Dashboard() {
   };
 
   const handleAdvanceWeek = () => {
-    setCurrentWeek(week + 1);
-    window.location.reload();
+    navigate('/predicted');
   };
 
   // Charts data

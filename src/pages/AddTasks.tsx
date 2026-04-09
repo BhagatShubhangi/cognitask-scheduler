@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Pencil, Sparkles, Lock } from 'lucide-react';
+import { Plus, Trash2, Pencil, Sparkles, Lock, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,66 +29,69 @@ export default function AddTasks() {
   const [dueDay, setDueDay] = useState<DayOfWeek>('Mon');
   const [isFixed, setIsFixed] = useState(false);
   const [fixedHour, setFixedHour] = useState('9');
+  const [isEveryday, setIsEveryday] = useState(false);
 
   const resetForm = () => {
-    setName(''); setPriority('medium'); setDuration('1');
-    setEffort('moderate'); setPreferredTime(''); setDueDay('Mon');
-    setEditingId(null); setIsFixed(false); setFixedHour('9');
+    setName('');
+    setPriority('medium');
+    setDuration('1');
+    setEffort('moderate');
+    setPreferredTime('');
+    // Don't reset dueDay — keep the user's last selected day
+    setEditingId(null);
+    setIsFixed(false);
+    setFixedHour('9');
+    setIsEveryday(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const daysToAdd: DayOfWeek[] = (isFixed && isEveryday) ? [...DAYS] : [dueDay];
+
     let aiSuggestedHour: number | undefined;
+    if (!isFixed) {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/suggest-slot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category: effort === "intense" ? "Deep Work" : "Light Work",
+            priority: priority.charAt(0).toUpperCase() + priority.slice(1),
+            duration_mins: (parseFloat(duration) || 1) * 60,
+            day: dueDay === "Mon" ? "Monday" : dueDay === "Tue" ? "Tuesday" :
+                 dueDay === "Wed" ? "Wednesday" : dueDay === "Thu" ? "Thursday" :
+                 dueDay === "Fri" ? "Friday" : dueDay === "Sat" ? "Saturday" : "Sunday",
+          }),
+        });
+        const data = await res.json();
+        aiSuggestedHour = data.best_hour;
+      } catch (error) {
+        console.error("AI scheduling failed:", error);
+      }
+    }
 
-if (!isFixed) {
-  try {
-    const res = await fetch("http://127.0.0.1:8000/suggest-slot", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        category: effort === "intense" ? "Deep Work" : "Light Work",
-        priority:
-          priority.charAt(0).toUpperCase() + priority.slice(1),
-        duration_mins: (parseFloat(duration) || 1) * 60,
-        day: dueDay === "Mon" ? "Monday" :
-             dueDay === "Tue" ? "Tuesday" :
-             dueDay === "Wed" ? "Wednesday" :
-             dueDay === "Thu" ? "Thursday" :
-             dueDay === "Fri" ? "Friday" :
-             dueDay === "Sat" ? "Saturday" : "Sunday",
-      }),
-    });
-
-    const data = await res.json();
-    aiSuggestedHour = data.best_hour;
-  } catch (error) {
-    console.error("AI scheduling failed:", error);
-  }
-}
-    const task: Task = {
-      id: editingId || crypto.randomUUID(),
+    const newTasks: Task[] = daysToAdd.map(day => ({
+      id: (editingId && daysToAdd.length === 1) ? editingId : crypto.randomUUID(),
       name: name.trim(),
       priority,
       duration: parseFloat(duration) || 1,
       effort,
       preferredTime: isFixed ? '' : preferredTime,
-      dueDay,
-      status: 'not-started',
+      dueDay: day,
+      status: 'not-started' as const,
       isFixed,
-      fixedHour: isFixed 
-      ? parseInt(fixedHour) 
-      : aiSuggestedHour,
-    };
+      fixedHour: isFixed ? parseInt(fixedHour) : aiSuggestedHour,
+      isEveryday: isFixed && isEveryday,
+    }));
 
     let updated: Task[];
     if (editingId) {
-      updated = tasks.map(t => t.id === editingId ? task : t);
+      // When editing, replace the single task
+      updated = tasks.map(t => t.id === editingId ? newTasks[0] : t);
     } else {
-      updated = [...tasks, task];
+      updated = [...tasks, ...newTasks];
     }
     setTasks(updated);
     saveTasks(updated);
@@ -96,9 +99,15 @@ if (!isFixed) {
   };
 
   const handleEdit = (task: Task) => {
-    setName(task.name); setPriority(task.priority); setDuration(String(task.duration));
-    setEffort(task.effort); setPreferredTime(task.preferredTime); setDueDay(task.dueDay);
-    setIsFixed(!!task.isFixed); setFixedHour(String(task.fixedHour ?? 9));
+    setName(task.name);
+    setPriority(task.priority);
+    setDuration(String(task.duration));
+    setEffort(task.effort);
+    setPreferredTime(task.preferredTime);
+    setDueDay(task.dueDay);
+    setIsFixed(!!task.isFixed);
+    setFixedHour(String(task.fixedHour ?? 9));
+    setIsEveryday(!!task.isEveryday);
     setEditingId(task.id);
   };
 
@@ -145,6 +154,16 @@ if (!isFixed) {
               <Lock className="h-3.5 w-3.5" /> Fixed Task (locked time, never rescheduled)
             </Label>
           </div>
+
+          {/* Everyday toggle — only visible when fixed is on */}
+          {isFixed && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-fixed/20">
+              <Switch id="everyday-toggle" checked={isEveryday} onCheckedChange={setIsEveryday} />
+              <Label htmlFor="everyday-toggle" className="text-sm text-foreground cursor-pointer flex items-center gap-2">
+                <CalendarDays className="h-3.5 w-3.5 text-fixed" /> Everyday (repeat on all 7 days)
+              </Label>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <Select value={priority} onValueChange={v => setPriority(v as Priority)}>
@@ -196,16 +215,19 @@ if (!isFixed) {
               </Select>
             )}
 
-            <Select value={dueDay} onValueChange={v => setDueDay(v as DayOfWeek)}>
-              <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Day" /></SelectTrigger>
-              <SelectContent>
-                {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {/* Hide day selector when everyday is on */}
+            {!(isFixed && isEveryday) && (
+              <Select value={dueDay} onValueChange={v => setDueDay(v as DayOfWeek)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue placeholder="Day" /></SelectTrigger>
+                <SelectContent>
+                  {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <Button type="submit" className="w-full font-semibold">
             <Plus className="h-4 w-4 mr-2" />
-            {editingId ? 'Update Task' : 'Add Task'}
+            {editingId ? 'Update Task' : isEveryday ? 'Add to All Days' : 'Add Task'}
           </Button>
         </form>
 
@@ -220,6 +242,7 @@ if (!isFixed) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {task.isFixed && <Lock className="h-3.5 w-3.5 text-fixed flex-shrink-0" />}
+                    {task.isEveryday && <CalendarDays className="h-3.5 w-3.5 text-fixed flex-shrink-0" />}
                     <span className="font-medium text-foreground truncate">{task.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${priorityColors[task.priority]}`}>
                       {task.priority}
@@ -230,6 +253,7 @@ if (!isFixed) {
                     {task.isFixed && task.fixedHour !== undefined
                       ? ` · Fixed @ ${task.fixedHour > 12 ? task.fixedHour - 12 : task.fixedHour}${task.fixedHour >= 12 ? 'PM' : 'AM'}`
                       : task.preferredTime ? ` · ${task.preferredTime}` : ''}
+                    {task.isEveryday ? ' · Everyday' : ''}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2">
