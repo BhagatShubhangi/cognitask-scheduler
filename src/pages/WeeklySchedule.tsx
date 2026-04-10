@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getTasks, saveTasks } from '@/lib/taskStore';
+import { getTasks, saveTasks, generateSchedule } from '@/lib/taskStore';
 import { Task, DAYS, HOURS, Priority, Effort, DayOfWeek } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LayoutDashboard, X, Lock, GripVertical, Clock } from 'lucide-react';
+import { LayoutDashboard, X, Lock, GripVertical, Clock, RefreshCw } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import Navbar from '@/components/Navbar';
 
@@ -48,6 +48,7 @@ export default function WeeklySchedule() {
   const [editHour, setEditHour] = useState<string>('');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ day: string; hour: number } | null>(null);
+  const [reallocating, setReallocating] = useState(false);
 
   const openModal = (task: Task) => {
     setSelectedTask(task);
@@ -95,14 +96,22 @@ export default function WeeklySchedule() {
     setSelectedTask(null);
   };
 
+  const handleReallocate = () => {
+    setReallocating(true);
+    setTimeout(() => {
+      const pending = tasks.map(t => {
+        if (t.isFixed || t.status === 'done') return t;
+        return { ...t, scheduledHour: undefined };
+      });
+      const rescheduled = generateSchedule(pending);
+      setTasksState(rescheduled);
+      saveTasks(rescheduled);
+      setReallocating(false);
+    }, 800);
+  };
+
   const getTasksStartingAt = (day: string, hour: number) =>
     tasks.filter(t => t.dueDay === day && t.scheduledHour === hour);
-
-  const isOccupiedByContinuation = (day: string, hour: number) =>
-    tasks.some(t => {
-      if (t.dueDay !== day || t.scheduledHour === undefined) return false;
-      return t.scheduledHour < hour && hour < t.scheduledHour + Math.ceil(t.duration);
-    });
 
   const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
@@ -156,16 +165,21 @@ export default function WeeklySchedule() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6 animate-fade-in">
           <h1 className="text-2xl font-bold text-foreground">Weekly Schedule</h1>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            <LayoutDashboard className="h-4 w-4 mr-2" /> Dashboard
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleReallocate} variant="outline" disabled={reallocating}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${reallocating ? 'animate-spin' : ''}`} />
+              {reallocating ? 'Re-Allocating...' : 'Re-Allocate Tasks'}
+            </Button>
+            <Button onClick={() => navigate('/dashboard')} variant="outline">
+              <LayoutDashboard className="h-4 w-4 mr-2" /> Dashboard
+            </Button>
+          </div>
         </div>
 
         <p className="text-xs text-muted-foreground mb-4">
           💡 Drag non-fixed tasks to move them. Click any task to edit its time — the model learns your preferences automatically.
         </p>
 
-        {/* Legend */}
         <div className="flex flex-wrap gap-3 mb-4 text-xs">
           {[
             ['priority-high-intense', '🔴 High + Intense'],
@@ -234,7 +248,6 @@ export default function WeeklySchedule() {
         </div>
       </div>
 
-      {/* Modal with time change */}
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => setSelectedTask(null)}>
           <div className="glass-card p-6 w-full max-w-sm animate-fade-in-scale" onClick={e => e.stopPropagation()}>
@@ -253,7 +266,6 @@ export default function WeeklySchedule() {
                 </SelectContent>
               </Select>
 
-              {/* Time change — only for non-fixed tasks */}
               {!selectedTask.isFixed && (
                 <div>
                   <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-1.5">

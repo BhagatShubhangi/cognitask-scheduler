@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getTasks, saveTasks, getPatterns, getCurrentWeek, setCurrentWeek } from '@/lib/taskStore';
+import { getTasks, saveTasks, getPatterns, getCurrentWeek, setCurrentWeek, saveSimulatedSchedule } from '@/lib/taskStore';
 import { Task, DAYS, HOURS, DayOfWeek, Priority, Effort } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Sparkles, Lock, CheckCircle2 } from 'lucide-react';
@@ -37,16 +37,14 @@ function predictSchedule(tasks: Task[]): Task[] {
     return true;
   };
 
-  // Place fixed tasks first
   const fixed = tasks.filter(t => t.isFixed && t.fixedHour !== undefined);
   const nonFixed = tasks.filter(t => !t.isFixed || t.fixedHour === undefined);
 
   for (const task of fixed) {
     occupySlots(task.dueDay, task.fixedHour!, task.duration);
-    result.push({ ...task, scheduledHour: task.fixedHour });
+    result.push({ ...task, scheduledHour: task.fixedHour, status: 'not-started' });
   }
 
-  // Build preference map from patterns + user adjustments
   const completedByPriority: Record<string, number[]> = {};
   patterns.filter(p => p.completed).forEach(p => {
     if (!completedByPriority[p.priority]) completedByPriority[p.priority] = [];
@@ -55,7 +53,6 @@ function predictSchedule(tasks: Task[]): Task[] {
     }
   });
 
-  // Also incorporate user-adjusted hours as strong signals
   const adjustedKey = 'cognitask_user_adjustments';
   const adjustments: Array<{ priority: string; hour: number }> = JSON.parse(localStorage.getItem(adjustedKey) || '[]');
   adjustments.forEach(a => {
@@ -65,7 +62,6 @@ function predictSchedule(tasks: Task[]): Task[] {
     }
   });
 
-  // Sort by priority weight
   const sorted = [...nonFixed].sort((a, b) => {
     const pw: Record<string, number> = { high: 3, medium: 2, low: 1 };
     return (pw[b.priority] || 0) - (pw[a.priority] || 0);
@@ -73,12 +69,11 @@ function predictSchedule(tasks: Task[]): Task[] {
 
   for (const task of sorted) {
     const patternHours = completedByPriority[task.priority] || [];
-    // Try pattern-based hours first, then fallback
     let placed = false;
     for (const h of patternHours) {
       if (canFit(task.dueDay, h, task.duration)) {
         occupySlots(task.dueDay, h, task.duration);
-        result.push({ ...task, scheduledHour: h });
+        result.push({ ...task, scheduledHour: h, status: 'not-started' });
         placed = true;
         break;
       }
@@ -86,7 +81,7 @@ function predictSchedule(tasks: Task[]): Task[] {
     if (!placed) {
       const hour = HOURS.find(h => canFit(task.dueDay, h, task.duration)) ?? 8;
       occupySlots(task.dueDay, hour, task.duration);
-      result.push({ ...task, scheduledHour: hour });
+      result.push({ ...task, scheduledHour: hour, status: 'not-started' });
     }
   }
 
@@ -99,24 +94,25 @@ export default function PredictedSchedule() {
   const week = getCurrentWeek();
 
   useEffect(() => {
+    // Only allow predicting week 2 from week 1
+    if (week !== 1) {
+      navigate('/dashboard');
+      return;
+    }
     const tasks = getTasks();
     setPredicted(predictSchedule(tasks));
   }, []);
 
   const handleAccept = () => {
+    // Save simulation and advance to week 2
+    saveSimulatedSchedule(predicted);
     saveTasks(predicted);
-    setCurrentWeek(week + 1);
+    setCurrentWeek(2);
     navigate('/dashboard');
   };
 
   const getTasksStartingAt = (day: string, hour: number) =>
     predicted.filter(t => t.dueDay === day && t.scheduledHour === hour);
-
-  const isOccupiedByContinuation = (day: string, hour: number) =>
-    predicted.some(t => {
-      if (t.dueDay !== day || t.scheduledHour === undefined) return false;
-      return t.scheduledHour < hour && hour < t.scheduledHour + Math.ceil(t.duration);
-    });
 
   return (
     <div className="min-h-screen">
@@ -124,26 +120,24 @@ export default function PredictedSchedule() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6 animate-fade-in">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Predicted Week {week + 1} Schedule</h1>
-            <p className="text-sm text-muted-foreground mt-1">AI-optimized based on your productivity patterns</p>
+            <h1 className="text-2xl font-bold text-foreground">Predicted Week 2 Schedule</h1>
+            <p className="text-sm text-muted-foreground mt-1">AI-optimized based on your Week 1 productivity patterns</p>
           </div>
           <Button onClick={() => navigate('/dashboard')} variant="outline">
             <ArrowLeft className="h-4 w-4 mr-2" /> Back
           </Button>
         </div>
 
-        {/* Smart mode banner */}
         <div className="glass-card p-4 mb-6 border-fixed/30 bg-fixed/5 animate-slide-up flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-fixed flex-shrink-0" />
           <div>
             <p className="text-sm font-semibold text-foreground">Smart Prediction Active</p>
             <p className="text-xs text-muted-foreground">
-              Tasks are placed at your most productive times based on Week {week} data. Fixed tasks (🔒) remain locked.
+              Tasks are placed at your most productive times based on Week 1 data. Fixed tasks (🔒) remain locked.
             </p>
           </div>
         </div>
 
-        {/* Schedule grid */}
         <div className="glass-card overflow-x-auto animate-slide-up mb-6">
           <div className="min-w-[800px]">
             <div className="grid grid-cols-[70px_repeat(7,1fr)] border-b border-border/50">
@@ -182,7 +176,6 @@ export default function PredictedSchedule() {
           </div>
         </div>
 
-        {/* Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {(['high', 'medium', 'low'] as Priority[]).map(p => {
             const count = predicted.filter(t => t.priority === p).length;
@@ -198,7 +191,7 @@ export default function PredictedSchedule() {
 
         <Button onClick={handleAccept} size="lg" className="w-full font-semibold glow-primary">
           <CheckCircle2 className="h-5 w-5 mr-2" />
-          Accept & Start Week {week + 1}
+          Accept & Start Week 2
         </Button>
       </div>
     </div>

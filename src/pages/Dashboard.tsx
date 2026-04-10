@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getTasks, saveTasks, getCurrentWeek, savePattern, generateSchedule } from '@/lib/taskStore';
+import { getTasks, saveTasks, getCurrentWeek, savePattern } from '@/lib/taskStore';
 import { Task, DAYS, DayOfWeek, TaskStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import Navbar from '@/components/Navbar';
 
@@ -39,7 +39,6 @@ const statusStyles: Record<TaskStatus, string> = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [tasks, setTasksState] = useState<Task[]>(getTasks());
-  const [reallocating, setReallocating] = useState(false);
   const week = getCurrentWeek();
 
   const todayTasks = tasks
@@ -64,26 +63,11 @@ export default function Dashboard() {
     saveTasks(updated);
   };
 
-  const handleReallocate = () => {
-    setReallocating(true);
-    setTimeout(() => {
-      // Keep fixed tasks and done tasks as-is; reschedule only pending non-fixed tasks
-      const pending = tasks.map(t => {
-        if (t.isFixed || t.status === 'done') return t;
-        return { ...t, scheduledHour: undefined };
-      });
-      const rescheduled = generateSchedule(pending);
-      setTasksState(rescheduled);
-      saveTasks(rescheduled);
-      setReallocating(false);
-    }, 800);
-  };
-
   const handleAdvanceWeek = () => {
+    // Only allow simulating the very next week (week+1), not beyond
     navigate('/predicted');
   };
 
-  // Charts data
   const completionData = DAYS.map(day => ({
     day,
     completed: tasks.filter(t => t.dueDay === day && t.status === 'done').length,
@@ -101,19 +85,20 @@ export default function Dashboard() {
   const loadLevel = pendingTasks === 0 ? 'Low' : pendingTasks <= 3 ? 'Medium' : 'High';
   const loadPercent = Math.min(100, (pendingTasks / Math.max(todayTasks.length, 1)) * 100);
 
+  // Only allow simulate if we haven't already advanced beyond week 1
+  const canSimulate = week === 1;
+
   return (
     <div className="min-h-screen">
       <Navbar />
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        {/* Header */}
         <div className="glass-card p-6 mb-6 animate-fade-in">
           <h1 className="text-2xl font-bold text-foreground">{getGreeting()} 👋</h1>
           <p className="text-muted-foreground mt-1">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} — Your peak focus window is 9AM–11AM
+            Week {week} — {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
 
-        {/* Week 2+ banner */}
         {week >= 2 && (
           <div className="glass-card p-4 mb-6 border-fixed/30 bg-fixed/5 animate-slide-up flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-fixed flex-shrink-0" />
@@ -124,7 +109,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Today's tasks */}
         <div className="glass-card p-6 mb-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
           <h2 className="text-lg font-semibold text-foreground mb-4">Today's Tasks — {TODAY}</h2>
           {todayTasks.length === 0 ? (
@@ -150,7 +134,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Charts grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <h3 className="text-sm font-semibold text-foreground mb-4">Energy Curve</h3>
@@ -209,14 +192,15 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button onClick={handleReallocate} size="lg" className="flex-1 font-semibold glow-primary" disabled={reallocating}>
-            <RefreshCw className={`h-5 w-5 mr-2 ${reallocating ? 'animate-spin' : ''}`} />
-            {reallocating ? 'Re-Allocating...' : 'Re-Allocate Tasks'}
-          </Button>
-          <Button onClick={handleAdvanceWeek} size="lg" variant="outline" className="flex-1 font-semibold">
-            Simulate Next Week →
+          <Button
+            onClick={handleAdvanceWeek}
+            size="lg"
+            variant={canSimulate ? 'default' : 'outline'}
+            className="flex-1 font-semibold"
+            disabled={!canSimulate}
+          >
+            {canSimulate ? 'Simulate Next Week →' : `Week ${week} — Already Simulated`}
           </Button>
         </div>
       </div>
