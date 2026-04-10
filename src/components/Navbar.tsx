@@ -1,16 +1,20 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Brain, ListTodo, CalendarDays, LayoutDashboard, LogOut } from 'lucide-react';
-import { logout } from '@/lib/taskStore';
+import { Brain, ListTodo, CalendarDays, LayoutDashboard, LogOut, Shield } from 'lucide-react';
+import { logout, getCurrentUser } from '@/lib/taskStore';
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const user = getCurrentUser();
+  const isManager = user?.role === 'manager';
 
-  const links = [
-    { to: '/tasks', label: 'Add Tasks', icon: ListTodo },
-    { to: '/schedule', label: 'Schedule', icon: CalendarDays },
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  ];
+  const links = isManager
+    ? [{ to: '/manager', label: 'Dashboard', icon: Shield }]
+    : [
+        { to: '/tasks', label: 'Add Tasks', icon: ListTodo },
+        { to: '/schedule', label: 'Schedule', icon: CalendarDays },
+        { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      ];
 
   const handleLogout = () => {
     logout();
@@ -20,9 +24,14 @@ export default function Navbar() {
   return (
     <nav className="sticky top-0 z-50 glass-card border-b border-border/50 px-4 py-3">
       <div className="container mx-auto flex items-center justify-between">
-        <Link to="/tasks" className="flex items-center gap-2 group">
+        <Link to={isManager ? '/manager' : '/tasks'} className="flex items-center gap-2 group">
           <Brain className="h-6 w-6 text-primary transition-transform group-hover:scale-110" />
           <span className="text-lg font-bold text-foreground">CogniTask</span>
+          {user && (
+            <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">
+              {user.name} {isManager && '(Manager)'}
+            </span>
+          )}
         </Link>
 
         <div className="flex items-center gap-1">
